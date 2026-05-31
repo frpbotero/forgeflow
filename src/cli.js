@@ -461,7 +461,7 @@ async function selectClisInteractive(choices) {
   let cursor = 0;
 
   emitKeypressEvents(process.stdin);
-  const rawWasEnabled = process.stdin.isRaw;
+  const rawWasEnabled = Boolean(process.stdin.isRaw);
   if (!rawWasEnabled) process.stdin.setRawMode(true);
 
   const render = () => {
@@ -478,6 +478,14 @@ async function selectClisInteractive(choices) {
   render();
 
   return await new Promise((resolve) => {
+    const cleanup = () => {
+      process.stdin.off('keypress', onKeyPress);
+      if (!rawWasEnabled && process.stdin.isRaw) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+    };
+
     const onKeyPress = (str, key) => {
       if (key?.name === 'up') {
         cursor = cursor === 0 ? choices.length - 1 : cursor - 1;
@@ -497,15 +505,13 @@ async function selectClisInteractive(choices) {
         return;
       }
       if (key?.name === 'return' || key?.name === 'enter') {
-        process.stdin.off('keypress', onKeyPress);
-        if (!rawWasEnabled) process.stdin.setRawMode(false);
+        cleanup();
         process.stdout.write('\n');
         resolve(Array.from(selected));
         return;
       }
       if (key?.ctrl && key?.name === 'c') {
-        process.stdin.off('keypress', onKeyPress);
-        if (!rawWasEnabled) process.stdin.setRawMode(false);
+        cleanup();
         process.stdout.write('\n');
         process.exit(130);
       }
@@ -523,6 +529,7 @@ async function selectClisInteractive(choices) {
     };
 
     process.stdin.on('keypress', onKeyPress);
+    process.stdin.resume();
   });
 }
 
