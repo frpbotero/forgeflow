@@ -18,7 +18,7 @@ Run with npx:
 npx forgeflow-agent init
 ```
 
-During `init`, ForgeFlow now asks which CLI you want to use (Codex, Claude, Gemini, Copilot, or custom command).
+During `init`, ForgeFlow asks which CLIs you want to enable (Codex, Claude, Gemini, Copilot, or custom command), allowing multi-selection.
 
 ## Usage
 
@@ -38,6 +38,12 @@ You can also define a custom runtime command:
 
 ```bash
 forgeflow init --cli custom --cli-cmd 'codex "{prompt}"'
+```
+
+You can enable multiple CLIs in one setup:
+
+```bash
+forgeflow init --cli codex,claude,copilot
 ```
 
 Generate planning artifacts:

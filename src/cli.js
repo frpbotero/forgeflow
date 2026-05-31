@@ -78,13 +78,18 @@ async function cmdInit(cwd, flags) {
   cfg.stack.nestjs = stack.includes('nest') || stack.includes('nestjs');
 
   const runtime = await resolveRuntimeConfig(flags);
-  cfg.agentRuntime.cli = runtime.cli;
-  cfg.agentRuntime.commandTemplate = runtime.commandTemplate;
+  cfg.agentRuntime.cli = runtime.defaultCli;
+  cfg.agentRuntime.commandTemplate = runtime.defaultCommandTemplate;
+  cfg.agentRuntime.runtimes = runtime.runtimes;
+  if (agents.length === 0 && runtime.selectedClis.length > 0) {
+    cfg.configuredAgents = runtime.selectedClis;
+  }
 
   const dirs = ensureBaseFiles(cwd, cfg);
   console.log('[forgeflow] Project initialized.');
   console.log(`[forgeflow] State: ${dirs.stateDir}`);
-  console.log(`[forgeflow] CLI runtime: ${cfg.agentRuntime.commandTemplate}`);
+  console.log(`[forgeflow] CLIs selecionados: ${cfg.configuredAgents.join(', ')}`);
+  console.log(`[forgeflow] CLI runtime padrão: ${cfg.agentRuntime.commandTemplate}`);
 }
 
 function cmdConfigure(cwd, flags) {
@@ -107,13 +112,26 @@ function cmdConfigure(cwd, flags) {
 
   if (flags.cli) {
     state.agentRuntime = state.agentRuntime || {};
-    state.agentRuntime.cli = String(flags.cli).trim().toLowerCase();
-    state.agentRuntime.commandTemplate = cliDefaultTemplate(state.agentRuntime.cli);
+    const selected = parseCliSelection(flags.cli);
+    const selectedClis = selected.length ? selected : ['codex'];
+    const runtimes = buildRuntimesConfig(selectedClis, flags['cli-cmd']);
+    const defaultCli = selectedClis[0];
+    state.agentRuntime.cli = defaultCli;
+    state.agentRuntime.commandTemplate = runtimes[defaultCli].commandTemplate;
+    state.agentRuntime.runtimes = runtimes;
+    state.configuredAgents = selectedClis;
   }
   if (flags['cli-cmd']) {
     state.agentRuntime = state.agentRuntime || {};
-    state.agentRuntime.commandTemplate = String(flags['cli-cmd']).trim();
-    if (!state.agentRuntime.cli) state.agentRuntime.cli = 'custom';
+    const customTemplate = String(flags['cli-cmd']).trim();
+    const selectedClis = Object.keys(state.agentRuntime.runtimes || {}).length
+      ? Object.keys(state.agentRuntime.runtimes)
+      : [state.agentRuntime.cli || 'custom'];
+    const runtimes = buildRuntimesConfig(selectedClis, customTemplate);
+    const defaultCli = state.agentRuntime.cli || selectedClis[0] || 'custom';
+    state.agentRuntime.cli = defaultCli;
+    state.agentRuntime.commandTemplate = runtimes[defaultCli]?.commandTemplate || customTemplate;
+    state.agentRuntime.runtimes = runtimes;
   }
 
   ensureBaseFiles(cwd, state);
@@ -262,7 +280,9 @@ async function cmdRun(cwd, flags) {
   const outPath = path.join(outDir, `${slugify(agent)}-task.md`);
   writeFile(outPath, prompt);
 
-  const commandTemplate = String(state.agentRuntime?.commandTemplate || 'codex');
+  const runtimes = state.agentRuntime?.runtimes || {};
+  const selectedRuntime = runtimes[agent] || runtimes[String(agent).toLowerCase()];
+  const commandTemplate = String(selectedRuntime?.commandTemplate || state.agentRuntime?.commandTemplate || 'codex');
   const runtimeCommand = commandTemplate.includes('{prompt}')
     ? commandTemplate.replaceAll('{prompt}', shellEscape(prompt))
     : commandTemplate;
@@ -322,31 +342,53 @@ function buildPrompt(state, task) {
 async function resolveRuntimeConfig(flags) {
   const cli = String(flags.cli || '').trim().toLowerCase();
   const cliCmd = String(flags['cli-cmd'] || '').trim();
-  if (cliCmd) {
-    return { cli: cli || 'custom', commandTemplate: cliCmd };
-  }
-
-  if (cli) {
-    return { cli, commandTemplate: cliDefaultTemplate(cli) };
+  const selectedFromFlag = parseCliSelection(cli);
+  if (selectedFromFlag.length > 0) {
+    const runtimes = buildRuntimesConfig(selectedFromFlag, cliCmd);
+    const defaultCli = selectedFromFlag[0];
+    return {
+      selectedClis: selectedFromFlag,
+      defaultCli,
+      defaultCommandTemplate: runtimes[defaultCli].commandTemplate,
+      runtimes
+    };
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return { cli: 'codex', commandTemplate: 'codex' };
+    const runtimes = buildRuntimesConfig(['codex'], cliCmd);
+    return {
+      selectedClis: ['codex'],
+      defaultCli: 'codex',
+      defaultCommandTemplate: runtimes.codex.commandTemplate,
+      runtimes
+    };
   }
 
   const choices = ['codex', 'claude', 'gemini', 'copilot', 'custom'];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question('Qual CLI você quer usar no forgeflow? [codex/claude/gemini/copilot/custom] ')).trim().toLowerCase();
-  let selected = choices.includes(answer) ? answer : 'codex';
-  let template = cliDefaultTemplate(selected);
-
-  if (selected === 'custom') {
-    const custom = (await rl.question('Informe o comando do CLI (aceita {prompt} como placeholder): ')).trim();
-    template = custom || 'codex';
+  console.log('Selecione os CLIs para habilitar no ForgeFlow:');
+  console.log('[ ] Codex');
+  console.log('[ ] Claude');
+  console.log('[ ] Gemini');
+  console.log('[ ] Copilot');
+  console.log('[ ] Custom');
+  const answer = (await rl.question('Digite um ou mais (separados por vírgula): [codex,claude,gemini,copilot,custom] ')).trim().toLowerCase();
+  const selected = parseCliSelection(answer).filter((item) => choices.includes(item));
+  const selectedClis = selected.length ? selected : ['codex'];
+  let customTemplate = cliCmd;
+  if (selectedClis.includes('custom') && !customTemplate) {
+    customTemplate = (await rl.question('Informe o comando do CLI custom (aceita {prompt} como placeholder): ')).trim();
   }
 
   rl.close();
-  return { cli: selected, commandTemplate: template };
+  const runtimes = buildRuntimesConfig(selectedClis, customTemplate);
+  const defaultCli = selectedClis[0];
+  return {
+    selectedClis,
+    defaultCli,
+    defaultCommandTemplate: runtimes[defaultCli].commandTemplate,
+    runtimes
+  };
 }
 
 function cliDefaultTemplate(cli) {
@@ -362,6 +404,35 @@ function cliDefaultTemplate(cli) {
     default:
       return 'codex';
   }
+}
+
+function parseCliSelection(value) {
+  if (!value) return [];
+  const valid = new Set(['codex', 'claude', 'gemini', 'copilot', 'custom']);
+  const clis = String(value)
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((item) => valid.has(item));
+  return Array.from(new Set(clis));
+}
+
+function buildRuntimesConfig(clis, customCommand) {
+  const runtimes = {};
+  for (const cli of clis) {
+    if (cli === 'custom') {
+      runtimes.custom = {
+        cli: 'custom',
+        commandTemplate: String(customCommand || 'codex')
+      };
+      continue;
+    }
+    runtimes[cli] = {
+      cli,
+      commandTemplate: cliDefaultTemplate(cli)
+    };
+  }
+  return runtimes;
 }
 
 function shellEscape(text) {
