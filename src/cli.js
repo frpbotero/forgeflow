@@ -15,6 +15,11 @@ Usage:
 Commands:
   init                Initialize ForgeFlow in current project
   configure           Update configuration paths/agents/stack
+  codex               Run task directly in Codex CLI runtime
+  claude              Run task directly in Claude CLI runtime
+  gemini              Run task directly in Gemini CLI runtime
+  copilot             Run task directly in Copilot CLI runtime
+  custom              Run task directly in Custom CLI runtime
   plan                Generate planning artifacts from docs/specs
   status              Show current project status
   questions           List open questions
@@ -37,6 +42,12 @@ export async function runCli(argv) {
       return cmdInit(cwd, flags);
     case 'configure':
       return cmdConfigure(cwd, flags);
+    case 'codex':
+    case 'claude':
+    case 'gemini':
+    case 'copilot':
+    case 'custom':
+      return cmdRun(cwd, { ...flags, agent: command });
     case 'plan':
       return cmdPlan(cwd, flags);
     case 'status':
@@ -268,7 +279,7 @@ function cmdPrompt(cwd, flags) {
 
 async function cmdRun(cwd, flags) {
   const { statePath, state } = loadState(cwd, flags.state || './dev/forgeflow');
-  const agent = flags.agent || state.activeAgent || state.configuredAgents[0] || 'codex';
+  const agent = String(flags.agent || state.activeAgent || state.configuredAgents[0] || 'codex').toLowerCase();
   const task = flags.task;
   if (!task) {
     throw new Error('Usage: forgeflow run --task "..." [--agent <name>]');
@@ -283,6 +294,12 @@ async function cmdRun(cwd, flags) {
 
   const runtimes = state.agentRuntime?.runtimes || {};
   const selectedRuntime = runtimes[agent] || runtimes[String(agent).toLowerCase()];
+  if (!selectedRuntime && Object.keys(runtimes).length > 0) {
+    throw new Error(
+      `CLI "${agent}" não está habilitada. CLIs disponíveis: ${Object.keys(runtimes).join(', ')}. ` +
+      'Use `forgeflow configure --cli codex,claude,...` para atualizar.'
+    );
+  }
   const commandTemplate = String(selectedRuntime?.commandTemplate || state.agentRuntime?.commandTemplate || 'codex');
   const runtimeCommand = commandTemplate.includes('{prompt}')
     ? commandTemplate.replaceAll('{prompt}', shellEscape(prompt))

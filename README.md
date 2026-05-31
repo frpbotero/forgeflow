@@ -88,6 +88,16 @@ Run agent CLI interactively:
 forgeflow run --agent codex --task "Create Angular app shell"
 ```
 
+Or run directly by target CLI:
+
+```bash
+forgeflow codex --task "Create Angular app shell"
+forgeflow claude --task "Create Angular app shell"
+forgeflow gemini --task "Create Angular app shell"
+forgeflow copilot --task "Create Angular app shell"
+forgeflow custom --task "Create Angular app shell"
+```
+
 Create checkpoint:
 
 ```bash
@@ -98,6 +108,11 @@ forgeflow checkpoint --name "initial planning"
 
 - `init`
 - `configure`
+- `codex`
+- `claude`
+- `gemini`
+- `copilot`
+- `custom`
 - `plan`
 - `status`
 - `questions`
