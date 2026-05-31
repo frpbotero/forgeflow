@@ -19,6 +19,10 @@ export function defaultConfig(cwd) {
       pwa: false,
       nestjs: false
     },
+    agentRuntime: {
+      cli: 'codex',
+      commandTemplate: 'codex'
+    },
     currentPhase: 'init',
     status: {
       planning: 'pending',

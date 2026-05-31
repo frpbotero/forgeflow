@@ -18,6 +18,8 @@ Run with npx:
 npx forgeflow-agent init
 ```
 
+During `init`, ForgeFlow now asks which CLI you want to use (Codex, Claude, Gemini, Copilot, or custom command).
+
 ## Usage
 
 Initialize in a project:
@@ -28,7 +30,14 @@ forgeflow init \
   --docs ./dev/docs \
   --specs ./dev/specs \
   --state ./dev/forgeflow \
+  --cli codex \
   --stack angular,nest,pwa
+```
+
+You can also define a custom runtime command:
+
+```bash
+forgeflow init --cli custom --cli-cmd 'codex "{prompt}"'
 ```
 
 Generate planning artifacts:
@@ -67,6 +76,12 @@ Generate agent prompt:
 forgeflow prompt --agent codex --task "Create Angular app shell"
 ```
 
+Run agent CLI interactively:
+
+```bash
+forgeflow run --agent codex --task "Create Angular app shell"
+```
+
 Create checkpoint:
 
 ```bash
@@ -83,6 +98,7 @@ forgeflow checkpoint --name "initial planning"
 - `answer`
 - `handoff`
 - `prompt`
+- `run`
 - `checkpoint`
 - `sync`
 
