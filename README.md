@@ -19,6 +19,7 @@ npx forgeflow-agent init
 ```
 
 During `init`, ForgeFlow asks which CLIs you want to enable (Codex, Claude, Gemini, Copilot, or custom command), allowing multi-selection.
+It also installs engine entry files and skills in the project (for example `CLAUDE.md`, `AGENTS.md`, `.claude/skills/forgeflow/`, `.agents/skills/forgeflow/`) so you can invoke `forgeflow` inside supported chats.
 
 ## Usage
 

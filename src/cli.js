@@ -98,10 +98,12 @@ async function cmdInit(cwd, flags) {
   }
 
   const dirs = ensureBaseFiles(cwd, cfg);
+  installEngineIntegration(cwd, cfg);
   console.log('[forgeflow] Project initialized.');
   console.log(`[forgeflow] State: ${dirs.stateDir}`);
   console.log(`[forgeflow] CLIs selecionados: ${cfg.configuredAgents.join(', ')}`);
   console.log(`[forgeflow] CLI runtime padrão: ${cfg.agentRuntime.commandTemplate}`);
+  console.log('[forgeflow] Integração de engine instalada: use `forgeflow` no chat da engine configurada.');
 }
 
 function cmdConfigure(cwd, flags) {
@@ -147,6 +149,7 @@ function cmdConfigure(cwd, flags) {
   }
 
   ensureBaseFiles(cwd, state);
+  installEngineIntegration(cwd, state);
   saveState(statePath, state, 'forgeflow-configure');
   console.log('[forgeflow] Configuration updated.');
 }
@@ -279,7 +282,8 @@ function cmdPrompt(cwd, flags) {
 
 async function cmdRun(cwd, flags) {
   const { statePath, state } = loadState(cwd, flags.state || './dev/forgeflow');
-  const agent = String(flags.agent || state.activeAgent || state.configuredAgents[0] || 'codex').toLowerCase();
+  const autoRuntime = detectCurrentRuntime(state);
+  const agent = String(flags.agent || autoRuntime || state.activeAgent || state.lastRuntimeUsed || state.configuredAgents[0] || 'codex').toLowerCase();
   const task = flags.task;
   if (!task) {
     throw new Error('Usage: forgeflow run --task "..." [--agent <name>]');
@@ -315,6 +319,7 @@ async function cmdRun(cwd, flags) {
   await runInteractiveCommand(runtimeCommand, cwd);
 
   state.activeAgent = agent;
+  state.lastRuntimeUsed = agent;
   state.currentPhase = 'implementation';
   state.status.implementation = 'in_progress';
   saveState(statePath, state, 'forgeflow-run');
@@ -443,6 +448,76 @@ function buildRuntimesConfig(clis, customCommand) {
     };
   }
   return runtimes;
+}
+
+function detectCurrentRuntime(state) {
+  const enabled = new Set(Object.keys(state.agentRuntime?.runtimes || {}));
+  if (process.env.CLAUDECODE === '1' && enabled.has('claude')) return 'claude';
+  return null;
+}
+
+function installEngineIntegration(cwd, state) {
+  const enabled = new Set(Object.keys(state.agentRuntime?.runtimes || {}));
+  const agentsSkillsDir = path.resolve(cwd, '.agents/skills/forgeflow');
+  const claudeSkillsDir = path.resolve(cwd, '.claude/skills/forgeflow');
+  ensureDir(agentsSkillsDir);
+  if (enabled.has('claude')) ensureDir(claudeSkillsDir);
+
+  const skillMd = buildForgeflowSkill(state);
+  writeFile(path.join(agentsSkillsDir, 'SKILL.md'), skillMd);
+  if (enabled.has('claude')) {
+    writeFile(path.join(claudeSkillsDir, 'SKILL.md'), skillMd);
+  }
+
+  if (enabled.has('codex')) {
+    const agentsEntry = buildAgentsEntry();
+    writeFile(path.resolve(cwd, 'AGENTS.md'), agentsEntry);
+  }
+  if (enabled.has('claude')) {
+    const claudeEntry = buildClaudeEntry();
+    writeFile(path.resolve(cwd, 'CLAUDE.md'), claudeEntry);
+  }
+}
+
+function buildForgeflowSkill(state) {
+  return `---
+name: forgeflow
+description: Ative o orchestrator ForgeFlow deste projeto.
+---
+
+# ForgeFlow
+
+Quando o usuário digitar \`forgeflow\` ou \`/forgeflow\`:
+1. Leia \`${state.paths.state}/project-state.json\`.
+2. Leia \`${state.paths.state}/planning.md\`, \`${state.paths.state}/roadmap.md\`, \`${state.paths.state}/decisions.md\` e \`${state.paths.state}/questions.md\`.
+3. Continue a execução respeitando o estado atual e os agentes configurados.
+4. Se precisar executar por terminal, use:
+   - \`forgeflow run --agent codex --task "<tarefa>"\`
+   - \`forgeflow run --agent claude --task "<tarefa>"\`
+`;
+}
+
+function buildClaudeEntry() {
+  return `# ForgeFlow
+
+Digite \`/forgeflow\` para ativar o orchestrator ForgeFlow.
+
+Quando o usuário digitar \`/forgeflow\` ou \`forgeflow\`:
+1. Ative o skill \`forgeflow\` em \`.claude/skills/forgeflow/SKILL.md\`.
+2. Se não existir, use \`.agents/skills/forgeflow/SKILL.md\`.
+3. Siga as instruções do skill.
+`;
+}
+
+function buildAgentsEntry() {
+  return `# ForgeFlow
+
+Digite \`forgeflow\` para ativar o orchestrator ForgeFlow.
+
+Quando o usuário digitar \`forgeflow\`:
+1. Ative o skill \`forgeflow\` em \`.agents/skills/forgeflow/SKILL.md\`.
+2. Siga as instruções do skill.
+`;
 }
 
 async function selectClisInteractive(choices) {

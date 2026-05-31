@@ -32,6 +32,7 @@ export function defaultConfig(cwd) {
       handoff: 'pending'
     },
     openQuestions: 0,
+    lastRuntimeUsed: 'codex',
     lastUpdatedBy: 'forgeflow',
     version: 1,
     updatedAt: nowIso()
