@@ -1,0 +1,33 @@
+{
+  "name": "forgeflow-agent",
+  "version": "0.1.0",
+  "description": "File-first multi-agent CLI orchestrator for AI coding workflows",
+  "type": "module",
+  "bin": {
+    "forgeflow": "./bin/forgeflow.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "node -e \"console.log('No linter configured')\""
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "agent",
+    "orchestrator",
+    "angular",
+    "nestjs",
+    "forgeflow"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
