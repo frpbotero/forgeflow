@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline/promises';
+import { emitKeypressEvents } from 'node:readline';
 import { parseArgs, csvToArray } from './core/args.js';
 import { ensureDir, nowIso, slugify, writeFile } from './core/fs-utils.js';
 import { defaultConfig, ensureBaseFiles, loadQuestions, loadState, renderQuestions, saveState } from './core/state.js';
@@ -365,22 +366,14 @@ async function resolveRuntimeConfig(flags) {
   }
 
   const choices = ['codex', 'claude', 'gemini', 'copilot', 'custom'];
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  console.log('Selecione os CLIs para habilitar no ForgeFlow:');
-  console.log('[ ] Codex');
-  console.log('[ ] Claude');
-  console.log('[ ] Gemini');
-  console.log('[ ] Copilot');
-  console.log('[ ] Custom');
-  const answer = (await rl.question('Digite um ou mais (separados por vírgula): [codex,claude,gemini,copilot,custom] ')).trim().toLowerCase();
-  const selected = parseCliSelection(answer).filter((item) => choices.includes(item));
+  const selected = await selectClisInteractive(choices);
   const selectedClis = selected.length ? selected : ['codex'];
   let customTemplate = cliCmd;
   if (selectedClis.includes('custom') && !customTemplate) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     customTemplate = (await rl.question('Informe o comando do CLI custom (aceita {prompt} como placeholder): ')).trim();
+    rl.close();
   }
-
-  rl.close();
   const runtimes = buildRuntimesConfig(selectedClis, customTemplate);
   const defaultCli = selectedClis[0];
   return {
@@ -433,6 +426,87 @@ function buildRuntimesConfig(clis, customCommand) {
     };
   }
   return runtimes;
+}
+
+async function selectClisInteractive(choices) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return ['codex'];
+  }
+
+  const labels = {
+    codex: 'Codex',
+    claude: 'Claude',
+    gemini: 'Gemini',
+    copilot: 'Copilot',
+    custom: 'Custom'
+  };
+  const selected = new Set();
+  let cursor = 0;
+
+  emitKeypressEvents(process.stdin);
+  const rawWasEnabled = process.stdin.isRaw;
+  if (!rawWasEnabled) process.stdin.setRawMode(true);
+
+  const render = () => {
+    process.stdout.write('\x1Bc');
+    process.stdout.write('Selecione os CLIs para habilitar no ForgeFlow\n');
+    process.stdout.write('Use ↑/↓ para navegar, espaço para marcar, Enter para confirmar.\n\n');
+    choices.forEach((cli, index) => {
+      const pointer = index === cursor ? '>' : ' ';
+      const mark = selected.has(cli) ? 'x' : ' ';
+      process.stdout.write(`${pointer} [${mark}] ${labels[cli]}\n`);
+    });
+  };
+
+  render();
+
+  return await new Promise((resolve) => {
+    const onKeyPress = (str, key) => {
+      if (key?.name === 'up') {
+        cursor = cursor === 0 ? choices.length - 1 : cursor - 1;
+        render();
+        return;
+      }
+      if (key?.name === 'down') {
+        cursor = cursor === choices.length - 1 ? 0 : cursor + 1;
+        render();
+        return;
+      }
+      if (key?.name === 'space') {
+        const current = choices[cursor];
+        if (selected.has(current)) selected.delete(current);
+        else selected.add(current);
+        render();
+        return;
+      }
+      if (key?.name === 'return' || key?.name === 'enter') {
+        process.stdin.off('keypress', onKeyPress);
+        if (!rawWasEnabled) process.stdin.setRawMode(false);
+        process.stdout.write('\n');
+        resolve(Array.from(selected));
+        return;
+      }
+      if (key?.ctrl && key?.name === 'c') {
+        process.stdin.off('keypress', onKeyPress);
+        if (!rawWasEnabled) process.stdin.setRawMode(false);
+        process.stdout.write('\n');
+        process.exit(130);
+      }
+      if (str && str.length === 1) {
+        const quick = str.toLowerCase();
+        const idx = choices.findIndex((cli) => cli[0] === quick);
+        if (idx >= 0) {
+          cursor = idx;
+          const current = choices[cursor];
+          if (selected.has(current)) selected.delete(current);
+          else selected.add(current);
+          render();
+        }
+      }
+    };
+
+    process.stdin.on('keypress', onKeyPress);
+  });
 }
 
 function shellEscape(text) {
